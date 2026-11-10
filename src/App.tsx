@@ -1,3 +1,4 @@
+import { StudentPrivacyPage } from './pages/privacy/StudentPrivacy';
 import { CustomLoginPage } from './CustomLoginPage';
 import { Admin, Resource, CustomRoutes } from 'react-admin';
 import { Route } from 'react-router-dom';
@@ -168,6 +169,7 @@ export default function App() {
 
         {/* صفحات مخصصة */}
         <CustomRoutes>
+         <Route path="/privacy" element={<StudentPrivacyPage />} />
           <Route path="/monitor" element={<MonitorPage />} />
           <Route path="/audit" element={<AuditPage />} />
           <Route path="/settings" element={<SettingsPage />} />
