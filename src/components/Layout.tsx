@@ -1,4 +1,4 @@
-import { Layout as RALayout, AppBar, TitlePortal, Menu, usePermissions } from 'react-admin';
+﻿import { Layout as RALayout, AppBar, TitlePortal, Menu, usePermissions } from 'react-admin';
 import { Box, Typography, Chip, Divider } from '@mui/material';
 
 // Icons
@@ -19,6 +19,7 @@ import PendingIcon from '@mui/icons-material/Pending';
 import BarChartIcon from '@mui/icons-material/BarChart';
 import FamilyRestroomIcon from '@mui/icons-material/FamilyRestroom';
 import UpdateIcon from '@mui/icons-material/Update';
+import SecurityIcon from '@mui/icons-material/Security';
 
 const SectionLabel = ({ label }: { label: string }) => (
   <Box px={2} pt={1.5} pb={0.5}>
@@ -43,6 +44,7 @@ const CustomMenu = () => {
       <Menu.Item to="/pendingSubs" primaryText="الاشتراكات المعلقة" leftIcon={<PendingIcon />} />
       <Menu.Item to="/parents" primaryText="متابعة الأهل" leftIcon={<FamilyRestroomIcon />} />
       <Menu.Item to="/studentUpdates" primaryText="تحديثات الطلاب" leftIcon={<UpdateIcon />} />
+      <Menu.Item to="/privacy" primaryText="خصوصية الطالب" leftIcon={<SecurityIcon />} />
 
       <Divider sx={{ my: 0.5 }} />
       <SectionLabel label="الاختبارات والمحتوى" />
