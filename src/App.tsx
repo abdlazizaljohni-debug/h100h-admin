@@ -43,6 +43,8 @@ import { CurriculumList, CurriculumShow } from './pages/curriculum/Curriculum';
 import { SiteVisitList, SiteVisitShow } from './pages/siteVisits/SiteVisits';
 import { MessageList, MessageShow } from './pages/messages/Messages';
 import { PendingSubList, PendingSubShow } from './pages/pendingSubs/PendingSubs';
+import { PaymentList, PaymentShow } from './pages/payments/Payments';
+import PaymentsIcon from '@mui/icons-material/Payments';
 import { StudentUpdateList, StudentUpdateShow } from './pages/studentUpdates/StudentUpdates';
 
 // Custom pages
@@ -156,6 +158,15 @@ export default function App() {
           show={PendingSubShow}
           icon={PendingIcon}
           options={{ label: 'الاشتراكات المعلقة' }}
+        />
+
+        {/* المدفوعات (Moyasar) */}
+        <Resource
+          name="payments"
+          list={PaymentList}
+          show={PaymentShow}
+          icon={PaymentsIcon}
+          options={{ label: 'المدفوعات' }}
         />
 
         {/* تحديثات الطلاب */}
