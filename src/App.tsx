@@ -44,6 +44,9 @@ import { SiteVisitList, SiteVisitShow } from './pages/siteVisits/SiteVisits';
 import { MessageList, MessageShow } from './pages/messages/Messages';
 import { PendingSubList, PendingSubShow } from './pages/pendingSubs/PendingSubs';
 import { PaymentList, PaymentShow } from './pages/Payments';
+import { ChatInboxPage } from './pages/ChatInbox';
+import { QuestionBankPage } from './pages/QuestionBank';
+import { MarketingPage } from './pages/Marketing';
 import PaymentsIcon from '@mui/icons-material/Payments';
 import { StudentUpdateList, StudentUpdateShow } from './pages/studentUpdates/StudentUpdates';
 
@@ -181,6 +184,9 @@ export default function App() {
         {/* صفحات مخصصة */}
         <CustomRoutes>
          <Route path="/privacy" element={<StudentPrivacyPage />} />
+          <Route path="/inbox" element={<ChatInboxPage />} />
+          <Route path="/question-bank" element={<QuestionBankPage />} />
+          <Route path="/marketing" element={<MarketingPage />} />
           <Route path="/monitor" element={<MonitorPage />} />
           <Route path="/audit" element={<AuditPage />} />
           <Route path="/settings" element={<SettingsPage />} />
