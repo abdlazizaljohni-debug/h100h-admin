@@ -47,6 +47,7 @@ import { PaymentList, PaymentShow } from './pages/Payments';
 import { ChatInboxPage } from './pages/ChatInbox';
 import { QuestionBankPage } from './pages/QuestionBank';
 import { MarketingPage } from './pages/Marketing';
+import { MonitoringPage } from './pages/Monitoring';
 import PaymentsIcon from '@mui/icons-material/Payments';
 import { StudentUpdateList, StudentUpdateShow } from './pages/studentUpdates/StudentUpdates';
 
@@ -187,6 +188,7 @@ export default function App() {
           <Route path="/inbox" element={<ChatInboxPage />} />
           <Route path="/question-bank" element={<QuestionBankPage />} />
           <Route path="/marketing" element={<MarketingPage />} />
+          <Route path="/monitoring" element={<MonitoringPage />} />
           <Route path="/monitor" element={<MonitorPage />} />
           <Route path="/audit" element={<AuditPage />} />
           <Route path="/settings" element={<SettingsPage />} />
