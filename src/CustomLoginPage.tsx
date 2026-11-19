@@ -7,6 +7,8 @@ import LockOutlinedIcon from '@mui/icons-material/LockOutlined';
 import SecurityIcon from '@mui/icons-material/Security';
 import { supabase } from './supabaseClient';
 
+// 2026-11-19: الدخول بخطوتين — كلمة المرور ثم رمز Google Authenticator
+// (يُطلب الرمز لكل مدير فعّل التحقق الثنائي)
 export const CustomLoginPage = () => {
   const [step, setStep]         = useState<'credentials' | 'totp'>('credentials');
   const [email, setEmail]       = useState('');
@@ -28,22 +30,23 @@ export const CustomLoginPage = () => {
         password,
       });
       if (authErr) throw authErr;
+      if (!data.user) throw new Error('لم يتم التعرف على المستخدم');
 
-      if (!data.session) {
-        // MFA مطلوب — ابحث عن عامل TOTP
-        const { data: factors, error: fe } = await supabase.auth.mfa.listFactors();
-        if (fe) throw fe;
+      // ── تحقق من مستوى AAL ──────────────────────────────
+      const { data: aal } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
 
+      if (aal && aal.nextLevel === 'aal2' && aal.nextLevel !== aal.currentLevel) {
+        // TOTP مطلوب — ابحث عن عامل TOTP المسجّل
+        const { data: factors } = await supabase.auth.mfa.listFactors();
         const totp = factors?.totp?.[0];
         if (totp) {
           setFactorId(totp.id);
           setStep('totp');
           return;
         }
-        throw new Error('لم يتم التعرف على المستخدم');
       }
 
-      // لا يوجد MFA — تحقق من دور Admin
+      // لا يوجد MFA أو AAL1 كافٍ — تحقق من دور Admin
       const { data: roleRow } = await supabase
         .from('admin_roles')
         .select('role')
@@ -55,7 +58,6 @@ export const CustomLoginPage = () => {
         throw new Error('ليس لديك صلاحية الوصول للوحة التحكم');
       }
 
-      // نجح الدخول
       window.location.replace('/');
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'خطأ في تسجيل الدخول');
@@ -99,6 +101,11 @@ export const CustomLoginPage = () => {
     } finally {
       setLoading(false);
     }
+  };
+
+  const backToCredentials = async () => {
+    await supabase.auth.signOut();
+    setStep('credentials'); setTotpCode(''); setError('');
   };
 
   return (
@@ -147,33 +154,17 @@ export const CustomLoginPage = () => {
           {step === 'credentials' && (
             <form onSubmit={handleCredentials}>
               <TextField
-                fullWidth
-                label="البريد الإلكتروني"
-                type="email"
-                value={email}
-                onChange={e => setEmail(e.target.value)}
-                sx={{ mb: 2 }}
-                required
-                autoFocus
-                inputProps={{ dir: 'ltr' }}
+                fullWidth label="البريد الإلكتروني" type="email"
+                value={email} onChange={e => setEmail(e.target.value)}
+                sx={{ mb: 2 }} required autoFocus inputProps={{ dir: 'ltr' }}
               />
               <TextField
-                fullWidth
-                label="كلمة المرور"
-                type="password"
-                value={password}
-                onChange={e => setPassword(e.target.value)}
-                sx={{ mb: 3 }}
-                required
+                fullWidth label="كلمة المرور" type="password"
+                value={password} onChange={e => setPassword(e.target.value)}
+                sx={{ mb: 3 }} required
               />
-              <Button
-                fullWidth
-                variant="contained"
-                type="submit"
-                disabled={loading}
-                size="large"
-                sx={{ borderRadius: 2, py: 1.2 }}
-              >
+              <Button fullWidth variant="contained" type="submit"
+                disabled={loading} size="large" sx={{ borderRadius: 2, py: 1.2 }}>
                 {loading ? <CircularProgress size={22} color="inherit" /> : 'دخول'}
               </Button>
             </form>
@@ -183,40 +174,21 @@ export const CustomLoginPage = () => {
           {step === 'totp' && (
             <form onSubmit={handleTOTP}>
               <TextField
-                fullWidth
-                label="رمز التصديق"
+                fullWidth label="رمز التصديق"
                 value={totpCode}
                 onChange={e => setTotpCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                sx={{ mb: 3 }}
-                required
-                autoFocus
-                placeholder="000000"
+                sx={{ mb: 3 }} required autoFocus placeholder="000000"
                 inputProps={{
-                  dir: 'ltr',
-                  maxLength: 6,
-                  style: {
-                    textAlign: 'center',
-                    letterSpacing: '0.6em',
-                    fontSize: '1.8rem',
-                    fontWeight: 700,
-                  },
+                  dir: 'ltr', maxLength: 6, inputMode: 'numeric', autoComplete: 'one-time-code',
+                  style: { textAlign: 'center', letterSpacing: '0.6em', fontSize: '1.8rem', fontWeight: 700 },
                 }}
               />
-              <Button
-                fullWidth
-                variant="contained"
-                type="submit"
+              <Button fullWidth variant="contained" type="submit"
                 disabled={loading || totpCode.length !== 6}
-                size="large"
-                sx={{ borderRadius: 2, py: 1.2, mb: 1 }}
-              >
+                size="large" sx={{ borderRadius: 2, py: 1.2, mb: 1 }}>
                 {loading ? <CircularProgress size={22} color="inherit" /> : 'تحقق'}
               </Button>
-              <Button
-                fullWidth
-                size="small"
-                onClick={() => { setStep('credentials'); setTotpCode(''); setError(''); }}
-              >
+              <Button fullWidth size="small" onClick={backToCredentials}>
                 ← رجوع
               </Button>
             </form>
