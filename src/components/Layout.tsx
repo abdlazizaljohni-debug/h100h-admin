@@ -1,4 +1,4 @@
-﻿import { Layout as RALayout, AppBar, TitlePortal, Menu, usePermissions } from 'react-admin';
+import { Layout as RALayout, AppBar, TitlePortal, Menu, usePermissions } from 'react-admin';
 import { Box, Typography, Chip, Divider } from '@mui/material';
 
 // Icons
@@ -20,6 +20,10 @@ import BarChartIcon from '@mui/icons-material/BarChart';
 import FamilyRestroomIcon from '@mui/icons-material/FamilyRestroom';
 import UpdateIcon from '@mui/icons-material/Update';
 import SecurityIcon from '@mui/icons-material/Security';
+import PaymentsIcon from '@mui/icons-material/Payments';
+import ForumIcon from '@mui/icons-material/Forum';
+import LibraryBooksIcon from '@mui/icons-material/LibraryBooks';
+import CampaignIcon from '@mui/icons-material/Campaign';
 
 const SectionLabel = ({ label }: { label: string }) => (
   <Box px={2} pt={1.5} pb={0.5}>
@@ -42,6 +46,7 @@ const CustomMenu = () => {
       <Menu.Item to="/students" primaryText="الطلاب" leftIcon={<PeopleIcon />} />
       <Menu.Item to="/subscriptions" primaryText="الاشتراكات" leftIcon={<CardMembershipIcon />} />
       <Menu.Item to="/pendingSubs" primaryText="الاشتراكات المعلقة" leftIcon={<PendingIcon />} />
+      <Menu.Item to="/payments" primaryText="المدفوعات" leftIcon={<PaymentsIcon />} />
       <Menu.Item to="/parents" primaryText="متابعة الأهل" leftIcon={<FamilyRestroomIcon />} />
       <Menu.Item to="/studentUpdates" primaryText="تحديثات الطلاب" leftIcon={<UpdateIcon />} />
       <Menu.Item to="/privacy" primaryText="خصوصية الطالب" leftIcon={<SecurityIcon />} />
@@ -49,12 +54,15 @@ const CustomMenu = () => {
       <Divider sx={{ my: 0.5 }} />
       <SectionLabel label="الاختبارات والمحتوى" />
       <Menu.Item to="/examResults" primaryText="نتائج الاختبارات" leftIcon={<AssignmentIcon />} />
+      <Menu.Item to="/question-bank" primaryText="بنك الأسئلة" leftIcon={<LibraryBooksIcon />} />
       <Menu.Item to="/questions" primaryText="الأسئلة" leftIcon={<QuizIcon />} />
       <Menu.Item to="/curriculumQuestions" primaryText="أسئلة المنهج" leftIcon={<MenuBookIcon />} />
       <Menu.Item to="/grade-stats" primaryText="إحصاءات الصفوف" leftIcon={<BarChartIcon />} />
 
       <Divider sx={{ my: 0.5 }} />
       <SectionLabel label="التواصل والتسويق" />
+      <Menu.Item to="/inbox" primaryText="صندوق الرسائل" leftIcon={<ForumIcon />} />
+      <Menu.Item to="/marketing" primaryText="التسويق" leftIcon={<CampaignIcon />} />
       <Menu.Item to="/notifications" primaryText="الإشعارات" leftIcon={<NotificationsIcon />} />
       <Menu.Item to="/messages" primaryText="الرسائل" leftIcon={<ChatIcon />} />
       <Menu.Item to="/coupons" primaryText="الكوبونات" leftIcon={<LocalOfferIcon />} />
