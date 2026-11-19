@@ -24,6 +24,7 @@ import PaymentsIcon from '@mui/icons-material/Payments';
 import ForumIcon from '@mui/icons-material/Forum';
 import LibraryBooksIcon from '@mui/icons-material/LibraryBooks';
 import CampaignIcon from '@mui/icons-material/Campaign';
+import TroubleshootIcon from '@mui/icons-material/Troubleshoot';
 
 const SectionLabel = ({ label }: { label: string }) => (
   <Box px={2} pt={1.5} pb={0.5}>
@@ -69,6 +70,7 @@ const CustomMenu = () => {
 
       <Divider sx={{ my: 0.5 }} />
       <SectionLabel label="المراقبة والتحليل" />
+      <Menu.Item to="/monitoring" primaryText="المراقبة التقنية" leftIcon={<TroubleshootIcon />} />
       <Menu.Item to="/monitor" primaryText="مراقب النظام" leftIcon={<MonitorIcon />} />
       <Menu.Item to="/siteVisits" primaryText="زيارات الموقع" leftIcon={<TrafficIcon />} />
       <Menu.Item to="/audit" primaryText="سجل المراجعة" leftIcon={<HistoryIcon />} />
