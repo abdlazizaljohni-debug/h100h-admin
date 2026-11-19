@@ -32,6 +32,12 @@ export const authProvider: AuthProvider = {
   checkAuth: async () => {
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) throw new Error('غير مصرح');
+    // 2026-11-19: من فعّل التحقق الثنائي لا يدخل بكلمة المرور وحدها
+    // (كان يكفي تحديث الصفحة بعد كلمة المرور لتجاوز خطوة الرمز)
+    const { data: aal } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+    if (aal && aal.nextLevel === 'aal2' && aal.currentLevel !== 'aal2') {
+      throw new Error('أدخل رمز التحقق الثنائي');
+    }
   },
 
   checkError: async (error) => {
