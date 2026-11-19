@@ -4,17 +4,23 @@
 //  إضافة وتعديل وحذف سؤال · استيراد جماعي بلصق من Excel
 //  نفس أعمدة جدول questions التي تقرأها البوابة: subject, grade, exam_num,
 //  term, question, opts (4 خيارات), ans (0-3), solution, image_url
+//  v2 (2026-11-19): رفع صور الأسئلة (تُضغط تلقائياً WebP) + معاينة كما يراها الطالب + نسخ سؤال
 // ══════════════════════════════════════════════════════════════
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Title, useNotify } from 'react-admin';
 import {
   Box, Card, CardContent, Typography, Tabs, Tab, Grid, Table, TableHead, TableBody, TableRow, TableCell,
   TextField, MenuItem, Button, Radio, Chip, Alert, Skeleton, Dialog, DialogTitle, DialogContent, DialogActions,
-  IconButton, Tooltip, LinearProgress,
+  IconButton, Tooltip, LinearProgress, Checkbox, FormControlLabel, CircularProgress,
 } from '@mui/material';
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
 import RefreshIcon from '@mui/icons-material/Refresh';
+import ImageIcon from '@mui/icons-material/Image';
+import VisibilityIcon from '@mui/icons-material/Visibility';
+import ContentCopyIcon from '@mui/icons-material/ContentCopy';
+import CloudUploadIcon from '@mui/icons-material/CloudUpload';
+import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import { supabase } from '../supabaseClient';
 
 type Q = {
@@ -55,6 +61,91 @@ async function fetchAllQ(): Promise<Q[]> {
   }
   return out;
 }
+
+/* ══════ صور الأسئلة: ضغط ثم رفع إلى Supabase Storage ══════ */
+const BUCKET = 'question-images';
+const MAX_W = 1200, MAX_H = 900;
+// يحوّل أي صورة إلى WebP بحجم مناسب للجوال (يوفّر باقة الطالب وسعة الخادم)
+async function compressImage(file: Blob): Promise<Blob> {
+  const bmp = await createImageBitmap(file);
+  const scale = Math.min(1, MAX_W / bmp.width, MAX_H / bmp.height);
+  const w = Math.max(1, Math.round(bmp.width * scale)), h = Math.max(1, Math.round(bmp.height * scale));
+  const c = document.createElement('canvas'); c.width = w; c.height = h;
+  const ctx = c.getContext('2d')!;
+  ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, w, h);          // خلفية بيضاء للصور الشفافة
+  ctx.drawImage(bmp, 0, 0, w, h);
+  for (const q of [0.85, 0.75, 0.6, 0.45]) {
+    const b: Blob | null = await new Promise((res) => c.toBlob(res, 'image/webp', q));
+    if (b && (b.size <= 350 * 1024 || q === 0.45)) return b;
+  }
+  throw new Error('تعذّر ضغط الصورة');
+}
+function storagePath(url?: string | null): string | null {
+  if (!url) return null;
+  const m = String(url).match(/\/storage\/v1\/object\/public\/question-images\/(.+)$/);
+  return m ? decodeURIComponent(m[1].split('?')[0]) : null;
+}
+async function uploadQImage(file: Blob, grade?: number, subject?: string): Promise<string> {
+  const blob = await compressImage(file);
+  const rnd = (crypto as any).randomUUID ? (crypto as any).randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const path = `g${grade || 0}/${(subject || 'misc').replace(/[^a-zA-Z0-9_-]/g, '') || 'misc'}/${rnd}.webp`;
+  const { error } = await supabase.storage.from(BUCKET).upload(path, blob, { contentType: 'image/webp', cacheControl: '31536000', upsert: false });
+  if (error) throw new Error(/bucket|not found/i.test(error.message) ? 'مخزن الصور غير مهيأ — شغّل 12-question-images.sql' : error.message);
+  return supabase.storage.from(BUCKET).getPublicUrl(path).data.publicUrl;
+}
+async function removeQImage(url?: string | null) {
+  const p = storagePath(url);
+  if (p) { try { await supabase.storage.from(BUCKET).remove([p]); } catch { /* */ } }
+}
+
+/* ══════ معاينة السؤال كما يراه الطالب ══════ */
+const PreviewDialog = ({ q, onClose, onEdit }: { q: Q; onClose: () => void; onEdit?: (q: Q) => void }) => {
+  const o = optsArr(q.opts);
+  return (
+    <Dialog open onClose={onClose} maxWidth="sm" fullWidth dir="rtl">
+      <DialogTitle sx={{ display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap' }}>
+        <Box flex={1}>معاينة السؤال</Box>
+        <Chip size="small" label={GRADE_AR[q.grade] || q.grade} />
+        <Chip size="small" label={subjName(q.subject)} />
+        <Chip size="small" variant="outlined" label={`اختبار ${q.exam_num} · فصل ${q.term ?? 1}`} />
+      </DialogTitle>
+      <DialogContent>
+        <Box sx={{ bgcolor: '#0D1226', color: '#E6E9FA', borderRadius: 3, p: 2.5 }}>
+          <Typography sx={{ fontWeight: 800, fontSize: 17, lineHeight: 1.8, whiteSpace: 'pre-wrap' }}>{q.question}</Typography>
+          {q.image_url && (
+            <Box textAlign="center" my={2}>
+              <img src={q.image_url} alt="صورة السؤال" style={{ maxWidth: '100%', maxHeight: 300, objectFit: 'contain', borderRadius: 12, border: '1px solid #2a2f55' }} />
+            </Box>
+          )}
+          <Box display="flex" flexDirection="column" gap={1} mt={1.5}>
+            {o.map((t, i) => (
+              <Box key={i} sx={{
+                display: 'flex', alignItems: 'center', gap: 1.25, p: 1.25, borderRadius: 2,
+                border: '1.5px solid', borderColor: i === Number(q.ans) ? '#34D399' : 'rgba(99,102,241,.3)',
+                bgcolor: i === Number(q.ans) ? 'rgba(52,211,153,.12)' : 'rgba(99,102,241,.06)',
+              }}>
+                <Box sx={{ width: 26, height: 26, borderRadius: '50%', display: 'grid', placeItems: 'center', fontWeight: 800, fontSize: 13,
+                  bgcolor: i === Number(q.ans) ? '#34D399' : 'rgba(99,102,241,.25)', color: i === Number(q.ans) ? '#052e1c' : '#C7D2FE' }}>{LETTERS[i] || i + 1}</Box>
+                <Typography flex={1} sx={{ whiteSpace: 'pre-wrap' }}>{t}</Typography>
+                {i === Number(q.ans) && <CheckCircleIcon sx={{ color: '#34D399' }} fontSize="small" />}
+              </Box>
+            ))}
+          </Box>
+          {q.solution && (
+            <Box mt={2} p={1.5} sx={{ borderRadius: 2, bgcolor: 'rgba(251,191,36,.08)', border: '1px solid rgba(251,191,36,.3)' }}>
+              <Typography variant="caption" sx={{ color: '#FBBF24', fontWeight: 800 }}>💡 الحل</Typography>
+              <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap', mt: .5 }}>{q.solution}</Typography>
+            </Box>
+          )}
+        </Box>
+      </DialogContent>
+      <DialogActions>
+        {onEdit && <Button startIcon={<EditIcon />} onClick={() => { onClose(); onEdit(q); }}>تعديل</Button>}
+        <Button onClick={onClose}>إغلاق</Button>
+      </DialogActions>
+    </Dialog>
+  );
+};
 
 export const QuestionBankPage = () => {
   const notify = useNotify();
@@ -225,7 +316,9 @@ const Quality = ({ all, onEdit }: { all: Q[]; onEdit: (q: Q) => void }) => {
   );
 };
 
-const QTable = ({ rows, onEdit, extra }: { rows: Q[]; onEdit: (q: Q) => void; extra?: (q: Q) => string }) => (
+const QTable = ({ rows, onEdit, extra }: { rows: Q[]; onEdit: (q: Q) => void; extra?: (q: Q) => string }) => {
+  const [pv, setPv] = useState<Q | null>(null);
+  return (
   <Card><Box sx={{ overflowX: 'auto' }}>
     <Table size="small">
       <TableHead><TableRow>
@@ -236,19 +329,30 @@ const QTable = ({ rows, onEdit, extra }: { rows: Q[]; onEdit: (q: Q) => void; ex
         {rows.length === 0 && <TableRow><TableCell colSpan={7} align="center" sx={{ py: 4, color: 'text.secondary' }}>لا شيء هنا ✓</TableCell></TableRow>}
         {rows.map((q) => (
           <TableRow key={q.id} hover>
-            <TableCell sx={{ maxWidth: 420 }}><Typography variant="body2" noWrap title={q.question}>{q.question}</Typography></TableCell>
+            <TableCell sx={{ maxWidth: 420 }}>
+              <Box display="flex" alignItems="center" gap={.75}>
+                {q.image_url && <Tooltip title="فيه صورة"><ImageIcon fontSize="small" color="primary" /></Tooltip>}
+                <Typography variant="body2" noWrap title={q.question}>{q.question}</Typography>
+              </Box>
+            </TableCell>
             <TableCell sx={{ whiteSpace: 'nowrap' }}>{GRADE_AR[q.grade] || q.grade}</TableCell>
             <TableCell sx={{ whiteSpace: 'nowrap' }}>{subjName(q.subject)}</TableCell>
             <TableCell>{q.exam_num}</TableCell>
             <TableCell>{q.term ?? 1}</TableCell>
             {extra && <TableCell><Chip size="small" color="error" variant="outlined" label={extra(q)} /></TableCell>}
-            <TableCell><IconButton size="small" onClick={() => onEdit(q)}><EditIcon fontSize="small" /></IconButton></TableCell>
+            <TableCell sx={{ whiteSpace: 'nowrap' }}>
+              <Tooltip title="معاينة"><IconButton size="small" onClick={() => setPv(q)}><VisibilityIcon fontSize="small" /></IconButton></Tooltip>
+              <Tooltip title="تعديل"><IconButton size="small" onClick={() => onEdit(q)}><EditIcon fontSize="small" /></IconButton></Tooltip>
+            </TableCell>
           </TableRow>
         ))}
       </TableBody>
     </Table>
-  </Box></Card>
-);
+  </Box>
+  {pv && <PreviewDialog q={pv} onClose={() => setPv(null)} onEdit={onEdit} />}
+  </Card>
+  );
+};
 
 /* ── بحث وتعديل ── */
 const Browse = ({ all, subjects, onEdit }: { all: Q[]; subjects: string[]; onEdit: (q: Q) => void }) => {
@@ -256,9 +360,11 @@ const Browse = ({ all, subjects, onEdit }: { all: Q[]; subjects: string[]; onEdi
   const [subject, setSubject] = useState('');
   const [exam, setExam] = useState<number | ''>('');
   const [text, setText] = useState('');
+  const [withImg, setWithImg] = useState(false);
   const rows = useMemo(() => all.filter((q) =>
     (grade === '' || q.grade === grade) && (!subject || q.subject === subject) && (exam === '' || q.exam_num === exam) &&
-    (!text || q.question?.includes(text) || optsArr(q.opts).some((o) => o.includes(text)))), [all, grade, subject, exam, text]);
+    (!withImg || !!q.image_url) &&
+    (!text || q.question?.includes(text) || optsArr(q.opts).some((o) => o.includes(text)))), [all, grade, subject, exam, text, withImg]);
   return (
     <Box>
       <Box display="flex" gap={1} flexWrap="wrap" mb={2}>
@@ -272,6 +378,7 @@ const Browse = ({ all, subjects, onEdit }: { all: Q[]; subjects: string[]; onEdi
           <MenuItem value="">الكل</MenuItem>{[1, 2, 3, 4].map((n) => <MenuItem key={n} value={n}>{n}</MenuItem>)}
         </TextField>
         <TextField size="small" label="بحث في النص" value={text} onChange={(e) => setText(e.target.value)} sx={{ flex: 1, minWidth: 200 }} />
+        <FormControlLabel control={<Checkbox size="small" checked={withImg} onChange={(e) => setWithImg(e.target.checked)} />} label="بصور فقط" />
       </Box>
       <Typography variant="caption" color="text.secondary">{rows.length.toLocaleString('ar-SA')} نتيجة{rows.length > 200 ? ' · يعرض أول 200' : ''}</Typography>
       <QTable rows={rows.slice(0, 200)} onEdit={onEdit} />
@@ -285,7 +392,13 @@ const EditDialog = ({ q, subjects, onClose, onSaved }: { q: Partial<Q>; subjects
   const [f, setF] = useState<Partial<Q>>({ ...q, opts: optsArr(q.opts).length ? optsArr(q.opts) : ['', '', '', ''] });
   const [busy, setBusy] = useState(false);
   const [confirmDel, setConfirmDel] = useState(false);
+  const [preview, setPreview] = useState(false);
+  const uploaded = useRef<string[]>([]);   // صور رُفعت في هذه النافذة (تُحذف إن أُلغيت)
   const opts = optsArr(f.opts);
+  const cancel = async () => {
+    for (const u of uploaded.current) if (u !== q.image_url) await removeQImage(u);
+    onClose();
+  };
   const setOpt = (i: number, v: string) => { const o = [...opts]; o[i] = v; setF({ ...f, opts: o }); };
   const valid = f.subject && f.grade && f.exam_num && f.question?.trim() && opts.length >= 2 && opts.every((o) => o.trim()) && f.ans != null && f.ans < opts.length;
   const save = async () => {
@@ -300,6 +413,10 @@ const EditDialog = ({ q, subjects, onClose, onSaved }: { q: Partial<Q>; subjects
       : await supabase.from('questions').insert({ ...row, added_by: 'admin-panel' });
     setBusy(false);
     if (error) { notify(`تعذّر الحفظ: ${error.message}`, { type: 'error' }); return; }
+    // نظافة المخزن: الصورة القديمة المستبدلة، والصور المرفوعة ولم تُستخدم
+    const keep = f.image_url || null;
+    if (q.image_url && q.image_url !== keep && f.id) await removeQImage(q.image_url);
+    for (const u of uploaded.current) if (u !== keep) await removeQImage(u);
     onSaved();
   };
   const del = async () => {
@@ -307,11 +424,23 @@ const EditDialog = ({ q, subjects, onClose, onSaved }: { q: Partial<Q>; subjects
     const { error } = await supabase.from('questions').delete().eq('id', f.id!);
     setBusy(false);
     if (error) { notify(`تعذّر الحذف: ${error.message}`, { type: 'error' }); return; }
+    await removeQImage(q.image_url);
+    for (const u of uploaded.current) await removeQImage(u);
     onSaved();
   };
+  const duplicate = () => {
+    // نسخة جديدة بنفس البيانات (بدون الصورة حتى لا تُحذف مع الأصل)
+    setF({ ...f, id: undefined, image_url: null, question: f.question });
+    uploaded.current = [];
+    notify('نسخة جديدة — عدّلها ثم احفظ', { type: 'info' });
+  };
   return (
-    <Dialog open onClose={busy ? undefined : onClose} maxWidth="md" fullWidth dir="rtl">
-      <DialogTitle>{f.id ? 'تعديل سؤال' : 'سؤال جديد'}</DialogTitle>
+    <Dialog open onClose={busy ? undefined : cancel} maxWidth="md" fullWidth dir="rtl">
+      <DialogTitle sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+        <Box flex={1}>{f.id ? 'تعديل سؤال' : 'سؤال جديد'}</Box>
+        {f.id && <Button size="small" startIcon={<ContentCopyIcon />} onClick={duplicate} disabled={busy}>نسخ كسؤال جديد</Button>}
+        <Button size="small" startIcon={<VisibilityIcon />} onClick={() => setPreview(true)} disabled={!f.question}>معاينة</Button>
+      </DialogTitle>
       <DialogContent>
         <Grid container spacing={1.5} sx={{ mt: 0 }}>
           <Grid item xs={6} md={3}>
@@ -350,7 +479,8 @@ const EditDialog = ({ q, subjects, onClose, onSaved }: { q: Partial<Q>; subjects
             <TextField fullWidth multiline minRows={2} label="شرح الحل (اختياري)" value={f.solution ?? ''} onChange={(e) => setF({ ...f, solution: e.target.value })} />
           </Grid>
           <Grid item xs={12}>
-            <TextField fullWidth size="small" label="رابط صورة (اختياري)" value={f.image_url ?? ''} onChange={(e) => setF({ ...f, image_url: e.target.value })} inputProps={{ dir: 'ltr' }} />
+            <ImageField value={f.image_url || ''} grade={Number(f.grade) || 0} subject={String(f.subject || '')}
+              onChange={(u, isNew) => { if (isNew && u) uploaded.current.push(u); setF({ ...f, image_url: u || null }); }} disabled={busy} />
           </Grid>
         </Grid>
         <Typography variant="caption" color="text.secondary" display="block" mt={1}>اختر الدائرة الخضراء بجانب الإجابة الصحيحة.</Typography>
@@ -361,11 +491,69 @@ const EditDialog = ({ q, subjects, onClose, onSaved }: { q: Partial<Q>; subjects
           {f.id && confirmDel && <Button color="error" variant="contained" onClick={del} disabled={busy}>تأكيد الحذف نهائياً</Button>}
         </Box>
         <Box>
-          <Button onClick={onClose} disabled={busy}>إلغاء</Button>
+          <Button onClick={cancel} disabled={busy}>إلغاء</Button>
           <Button variant="contained" onClick={save} disabled={!valid || busy}>{busy ? 'جارٍ الحفظ…' : 'حفظ'}</Button>
         </Box>
       </DialogActions>
+      {preview && <PreviewDialog q={{ ...(f as Q), opts }} onClose={() => setPreview(false)} />}
     </Dialog>
+  );
+};
+
+/* ── حقل الصورة: رفع من الجهاز / لصق / سحب وإفلات / رابط ── */
+const ImageField = ({ value, grade, subject, onChange, disabled }: {
+  value: string; grade: number; subject: string; disabled?: boolean;
+  onChange: (url: string, isNew?: boolean) => void;
+}) => {
+  const notify = useNotify();
+  const input = useRef<HTMLInputElement>(null);
+  const [busy, setBusy] = useState(false);
+  const [drag, setDrag] = useState(false);
+  const [showUrl, setShowUrl] = useState(false);
+  const take = async (file?: File | Blob | null) => {
+    if (!file) return;
+    if (!/^image\//.test(file.type)) { notify('الملف ليس صورة', { type: 'warning' }); return; }
+    if (file.size > 15 * 1024 * 1024) { notify('الصورة كبيرة جداً (الحد 15MB قبل الضغط)', { type: 'warning' }); return; }
+    setBusy(true);
+    try {
+      const url = await uploadQImage(file, grade, subject);
+      onChange(url, true);
+      notify('تم رفع الصورة ✓', { type: 'success' });
+    } catch (e: any) { notify(`تعذّر الرفع: ${e?.message || e}`, { type: 'error' }); }
+    finally { setBusy(false); }
+  };
+  return (
+    <Box
+      onPaste={(e) => { const it = Array.from(e.clipboardData.items).find((i) => i.type.startsWith('image/')); if (it) { e.preventDefault(); take(it.getAsFile()); } }}
+      onDragOver={(e) => { e.preventDefault(); setDrag(true); }} onDragLeave={() => setDrag(false)}
+      onDrop={(e) => { e.preventDefault(); setDrag(false); take(e.dataTransfer.files?.[0]); }}
+      tabIndex={0}
+      sx={{ border: '2px dashed', borderColor: drag ? 'primary.main' : 'divider', borderRadius: 2, p: 1.5, bgcolor: drag ? 'action.hover' : 'transparent', outline: 'none' }}>
+      <Box display="flex" alignItems="center" gap={1.5} flexWrap="wrap">
+        {value ? (
+          <img src={value} alt="" style={{ height: 90, maxWidth: 200, objectFit: 'contain', borderRadius: 8, border: '1px solid #ddd', background: '#fff' }} />
+        ) : (
+          <Box sx={{ width: 90, height: 90, borderRadius: 2, bgcolor: 'action.hover', display: 'grid', placeItems: 'center' }}><ImageIcon color="disabled" /></Box>
+        )}
+        <Box flex={1} minWidth={200}>
+          <Typography variant="body2" fontWeight={700}>صورة السؤال (اختياري)</Typography>
+          <Typography variant="caption" color="text.secondary" display="block">
+            اختر صورة، أو اسحبها هنا، أو الصقها (Ctrl+V). تُضغط تلقائياً لتناسب الجوال.
+          </Typography>
+          <Box display="flex" gap={1} mt={1} flexWrap="wrap">
+            <Button size="small" variant="outlined" startIcon={busy ? <CircularProgress size={14} /> : <CloudUploadIcon />}
+              onClick={() => input.current?.click()} disabled={busy || disabled}>{value ? 'تغيير الصورة' : 'رفع صورة'}</Button>
+            {value && <Button size="small" color="error" onClick={() => onChange('')} disabled={busy || disabled}>إزالة</Button>}
+            <Button size="small" onClick={() => setShowUrl((v) => !v)}>رابط</Button>
+          </Box>
+          <input ref={input} type="file" accept="image/*" hidden onChange={(e) => { take(e.target.files?.[0]); e.target.value = ''; }} />
+        </Box>
+      </Box>
+      {showUrl && (
+        <TextField fullWidth size="small" sx={{ mt: 1.5 }} label="أو رابط صورة مباشر" value={value}
+          onChange={(e) => onChange(e.target.value.trim())} inputProps={{ dir: 'ltr' }} />
+      )}
+    </Box>
   );
 };
 
