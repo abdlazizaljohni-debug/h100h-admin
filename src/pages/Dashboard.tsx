@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   Card, CardContent, Typography, Grid, Box, Chip, Button, Table, TableBody, TableCell,
   TableHead, TableRow, Skeleton, Alert, Dialog, DialogTitle, DialogContent, DialogActions,
-  MenuItem, Select, FormControl, InputLabel,
+  MenuItem, Select, FormControl, InputLabel, Tabs, Tab,
 } from '@mui/material';
 import PeopleIcon from '@mui/icons-material/People';
 import WorkspacePremiumIcon from '@mui/icons-material/WorkspacePremium';
@@ -18,6 +18,7 @@ import {
 } from 'recharts';
 import { useNotify } from 'react-admin';
 import { supabase } from '../supabaseClient';
+import { TechTab, SecurityTab, DevTab } from './DashboardInsights';
 
 /* ── أدوات ── */
 const FREE = new Set(['free', 'visitor', 'زائر', '', null as unknown as string]);
@@ -134,8 +135,8 @@ export const ActivateDialog = ({ row, onClose, onDone }: {
   );
 };
 
-/* ── لوحة التحكم ── */
-export const Dashboard = () => {
+/* ── نظرة عامة ── */
+const Overview = () => {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [students, setStudents] = useState<Student[]>([]);
@@ -211,10 +212,9 @@ export const Dashboard = () => {
   }, [students, payments, exams]);
 
   return (
-    <Box p={{ xs: 1.5, md: 3 }}>
-      <Box mb={3} display="flex" alignItems="center" gap={1} flexWrap="wrap">
-        <Typography variant="h5" fontWeight={800}>لوحة التحكم</Typography>
-        <Chip label="h100h.com" color="primary" size="small" />
+    <Box>
+      <Box mb={2} display="flex" alignItems="center" gap={1} flexWrap="wrap">
+        <Typography variant="h6" fontWeight={800}>نظرة عامة</Typography>
         <Box flex={1} />
         <Button size="small" startIcon={<RefreshIcon />} onClick={() => setTick((t) => t + 1)} disabled={loading}>تحديث</Button>
       </Box>
@@ -336,6 +336,32 @@ export const Dashboard = () => {
       </Panel>
 
       <ActivateDialog row={activate} onClose={() => setActivate(null)} onDone={() => setTick((t) => t + 1)} />
+    </Box>
+  );
+};
+
+/* ── لوحة التحكم: تبويبات (2026-11-19) ── */
+const TAB_KEY = 'h100h-dash-tab';
+const TABS = ['نظرة عامة', 'تقني', 'أمني', 'تطويري'];
+export const Dashboard = () => {
+  const [tab, setTab] = useState<number>(() => {
+    try { const n = Number(localStorage.getItem(TAB_KEY)); return n >= 0 && n < TABS.length ? n : 0; } catch { return 0; }
+  });
+  const pick = (n: number) => { setTab(n); try { localStorage.setItem(TAB_KEY, String(n)); } catch { /* */ } };
+  return (
+    <Box p={{ xs: 1.5, md: 3 }}>
+      <Box mb={1} display="flex" alignItems="center" gap={1} flexWrap="wrap">
+        <Typography variant="h5" fontWeight={800}>لوحة التحكم</Typography>
+        <Chip label="h100h.com" color="primary" size="small" />
+      </Box>
+      <Tabs value={tab} onChange={(_, v) => pick(v)} variant="scrollable" allowScrollButtonsMobile
+        sx={{ mb: 3, borderBottom: 1, borderColor: 'divider' }}>
+        {TABS.map((t) => <Tab key={t} label={t} sx={{ fontWeight: 700 }} />)}
+      </Tabs>
+      {tab === 0 && <Overview />}
+      {tab === 1 && <TechTab />}
+      {tab === 2 && <SecurityTab />}
+      {tab === 3 && <DevTab />}
     </Box>
   );
 };
