@@ -43,7 +43,7 @@ import { CurriculumList, CurriculumShow } from './pages/curriculum/Curriculum';
 import { SiteVisitList, SiteVisitShow } from './pages/siteVisits/SiteVisits';
 import { MessageList, MessageShow } from './pages/messages/Messages';
 import { PendingSubList, PendingSubShow } from './pages/pendingSubs/PendingSubs';
-import { PaymentList, PaymentShow } from './pages/payments/Payments';
+import { PaymentList, PaymentShow } from './pages/Payments';
 import PaymentsIcon from '@mui/icons-material/Payments';
 import { StudentUpdateList, StudentUpdateShow } from './pages/studentUpdates/StudentUpdates';
 
