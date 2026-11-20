@@ -287,6 +287,7 @@ const SHORTCUTS: { perm: string; to: string; label: string }[] = [
   { perm: 'questions_view', to: '/question-bank', label: 'بنك الأسئلة (مشاهدة)' },
   { perm: 'questions_edit', to: '/question-bank', label: 'بنك الأسئلة (إضافة وتعديل)' },
   { perm: 'students_edit', to: '/students', label: 'الطلاب' },
+  { perm: 'students_block', to: '/students', label: 'الطلاب (حظر وإيقاف)' },
   { perm: 'students_edit', to: '/inbox', label: 'صندوق الرسائل' },
   { perm: 'subs', to: '/pendingSubs', label: 'الاشتراكات المعلقة' },
   { perm: 'subs', to: '/payments', label: 'المدفوعات' },
