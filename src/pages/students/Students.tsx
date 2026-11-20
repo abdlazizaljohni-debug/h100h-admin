@@ -9,7 +9,7 @@ import { createContext, useContext, useEffect, useState } from 'react';
 import {
   List, Datagrid, TextField, DateField, FunctionField,
   Show, SearchInput, TextInput, SelectInput, FilterButton, ExportButton,
-  TopToolbar, Pagination, useRecordContext, useListContext, useNotify, useRefresh, Title,
+  TopToolbar, Pagination, useRecordContext, useListContext, useNotify, useRefresh, Title, useRedirect,
 } from 'react-admin';
 import { Link } from 'react-router-dom';
 import {
@@ -27,6 +27,7 @@ import WhatsAppIcon from '@mui/icons-material/WhatsApp';
 import ForumIcon from '@mui/icons-material/Forum';
 import AssignmentIcon from '@mui/icons-material/Assignment';
 import WorkspacePremiumIcon from '@mui/icons-material/WorkspacePremium';
+import DeleteForeverIcon from '@mui/icons-material/DeleteForever';
 import { supabase } from '../../supabaseClient';
 import { useAccess } from '../../access';
 import { ActivateDialog } from '../Dashboard';
@@ -257,11 +258,50 @@ const LoginsDialog = ({ r, onClose }: { r: Stu; onClose: () => void }) => {
   );
 };
 
+/* ── حذف نهائي (المدير فقط) ── */
+const DeleteDialog = ({ r, onClose }: { r: Stu; onClose: () => void }) => {
+  const notify = useNotify(); const refresh = useRefresh(); const redirect = useRedirect();
+  const [typed, setTyped] = useState('');
+  const [busy, setBusy] = useState(false);
+  const go = async () => {
+    setBusy(true);
+    const { data, error } = await supabase.rpc('admin_delete_student', { p_mob: r.mob });
+    setBusy(false);
+    if (error) {
+      notify(/admin_delete_student|function/.test(error.message) ? 'شغّل ملف 18-delete-student.sql أولاً' : `تعذّر الحذف: ${error.message}`, { type: 'error' });
+      return;
+    }
+    const d = (data || {}) as Record<string, number>;
+    const extra = Object.entries(d).filter(([k]) => k !== 'students').reduce((a, [, v]) => a + Number(v || 0), 0);
+    notify(`تم حذف الطالب${extra ? ` و${extra} سجل مرتبط به` : ''}`, { type: 'success' });
+    onClose();
+    if (/\/students\/\d+/.test(window.location.hash)) redirect('list', 'students'); else refresh();
+  };
+  return (
+    <Dialog open onClose={busy ? undefined : onClose} dir="rtl" fullWidth maxWidth="xs">
+      <DialogTitle sx={{ color: 'error.main' }}>حذف الطالب نهائياً</DialogTitle>
+      <DialogContent>
+        <Alert severity="error" sx={{ mb: 2 }}>
+          يُحذف حساب <b>{r.name || '—'}</b> وكل بياناته: النتائج والمحادثات والطلبات. <b>لا يمكن التراجع.</b>
+          <br />المدفوعات وسجلات الأمان تبقى محفوظة.
+        </Alert>
+        {r.active && <Alert severity="warning" sx={{ mb: 2 }}>هذا الطالب <b>مشترك حالياً</b> — هل الأفضل حظره بدل حذفه؟</Alert>}
+        <MuiText fullWidth autoFocus label="اكتب رقم الجوال للتأكيد" value={typed} onChange={(e) => setTyped(e.target.value.trim())}
+          placeholder={r.mob} inputProps={{ dir: 'ltr', inputMode: 'numeric' }} />
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={onClose} disabled={busy}>إلغاء</Button>
+        <Button variant="contained" color="error" onClick={go} disabled={busy || typed !== r.mob}>حذف نهائياً</Button>
+      </DialogActions>
+    </Dialog>
+  );
+};
+
 /* ── أيقونات الإجراءات (القائمة وصفحة الطالب) ── */
 const StudentActions = ({ r, compact }: { r: Stu; compact?: boolean }) => {
-  const { can } = useAccess();
+  const { can, isAdmin } = useAccess();
   const notify = useNotify(); const refresh = useRefresh();
-  const [dlg, setDlg] = useState<null | 'edit' | 'block' | 'suspend' | 'ips' | 'activate'>(null);
+  const [dlg, setDlg] = useState<null | 'edit' | 'block' | 'suspend' | 'ips' | 'activate' | 'delete'>(null);
   const stop = (e: React.MouseEvent) => e.stopPropagation();
   const lift = async (what: 'block' | 'suspend') => {
     if (!window.confirm(what === 'block' ? 'فك الحظر عن الطالب؟' : 'إلغاء الإيقاف المؤقت؟')) return;
@@ -286,11 +326,13 @@ const StudentActions = ({ r, compact }: { r: Stu; compact?: boolean }) => {
       {can('students_edit') && <Tooltip title="محادثة الطالب"><IconButton size={sz} component={Link} to={`/inbox?mob=${r.mob}`}><ForumIcon fontSize="small" /></IconButton></Tooltip>}
       {can('students_edit') && <Tooltip title="نتائج الاختبارات"><IconButton size={sz} component={Link} to={`/examResults?filter=${encodeURIComponent(JSON.stringify({ mob: r.mob }))}`}><AssignmentIcon fontSize="small" /></IconButton></Tooltip>}
       <Tooltip title="واتساب"><IconButton size={sz} component="a" href={`https://wa.me/${wa}`} target="_blank" rel="noopener" sx={{ color: '#25D366' }}><WhatsAppIcon fontSize="small" /></IconButton></Tooltip>
+      {isAdmin && <Tooltip title="حذف نهائي"><IconButton size={sz} color="error" onClick={() => setDlg('delete')}><DeleteForeverIcon fontSize="small" /></IconButton></Tooltip>}
 
       {dlg === 'edit' && <EditDialog r={r} onClose={() => setDlg(null)} />}
       {(dlg === 'block' || dlg === 'suspend') && <BlockDialog r={r} mode={dlg} onClose={() => setDlg(null)} />}
       {dlg === 'ips' && <LoginsDialog r={r} onClose={() => setDlg(null)} />}
       {dlg === 'activate' && <ActivateDialog row={r} onClose={() => setDlg(null)} onDone={refresh} />}
+      {dlg === 'delete' && <DeleteDialog r={r} onClose={() => setDlg(null)} />}
     </Box>
   );
 };
