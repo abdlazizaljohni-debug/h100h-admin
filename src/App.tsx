@@ -48,6 +48,7 @@ import { ChatInboxPage } from './pages/ChatInbox';
 import { QuestionBankPage } from './pages/QuestionBank';
 import { MarketingPage } from './pages/Marketing';
 import { MonitoringPage } from './pages/Monitoring';
+import { StaffPage, MyAccountPage, DashboardGate } from './pages/Staff';
 import PaymentsIcon from '@mui/icons-material/Payments';
 import { StudentUpdateList, StudentUpdateShow } from './pages/studentUpdates/StudentUpdates';
 
@@ -67,7 +68,7 @@ export default function App() {
   dataProvider={dataProvider}
   authProvider={authProvider}
   i18nProvider={i18nProvider}
-  dashboard={Dashboard}
+  dashboard={DashboardGate}
   layout={Layout}
   disableTelemetry
   requireAuth
@@ -194,6 +195,8 @@ export default function App() {
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="/parents" element={<ParentsPage />} />
           <Route path="/grade-stats" element={<GradeStatsPage />} />
+          <Route path="/staff" element={<StaffPage />} />
+          <Route path="/my-account" element={<MyAccountPage />} />
         </CustomRoutes>
       </Admin>
     </ThemeProvider>
