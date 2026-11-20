@@ -25,6 +25,9 @@ import ForumIcon from '@mui/icons-material/Forum';
 import LibraryBooksIcon from '@mui/icons-material/LibraryBooks';
 import CampaignIcon from '@mui/icons-material/Campaign';
 import TroubleshootIcon from '@mui/icons-material/Troubleshoot';
+import GroupsIcon from '@mui/icons-material/Groups';
+import AccountCircleIcon from '@mui/icons-material/AccountCircle';
+import type { Access } from '../access';
 
 const SectionLabel = ({ label }: { label: string }) => (
   <Box px={2} pt={1.5} pb={0.5}>
@@ -35,7 +38,30 @@ const SectionLabel = ({ label }: { label: string }) => (
 );
 
 const CustomMenu = () => {
-  const { permissions } = usePermissions();
+  const { permissions } = usePermissions<Access | null>();
+  // 2026-11-20: المدير يرى كل الأقسام · الموظف يرى أقسام صلاحياته فقط
+  const a = permissions && typeof permissions === 'object' ? permissions : null;
+  const isAdmin = !!a?.isAdmin;
+  const can = (p: string) => isAdmin || !!a?.perms?.includes(p);
+  const canQ = can('questions_view') || can('questions_edit');
+
+  if (a && !isAdmin) {
+    return (
+      <Menu>
+        <Menu.DashboardItem primaryText="الرئيسية" leftIcon={<DashboardIcon />} />
+        {canQ && <Menu.Item to="/question-bank" primaryText="بنك الأسئلة" leftIcon={<LibraryBooksIcon />} />}
+        {can('students_edit') && <Menu.Item to="/students" primaryText="الطلاب" leftIcon={<PeopleIcon />} />}
+        {can('students_edit') && <Menu.Item to="/inbox" primaryText="صندوق الرسائل" leftIcon={<ForumIcon />} />}
+        {can('students_edit') && <Menu.Item to="/examResults" primaryText="نتائج الاختبارات" leftIcon={<AssignmentIcon />} />}
+        {can('subs') && <Menu.Item to="/pendingSubs" primaryText="الاشتراكات المعلقة" leftIcon={<PendingIcon />} />}
+        {can('subs') && <Menu.Item to="/subscriptions" primaryText="الاشتراكات" leftIcon={<CardMembershipIcon />} />}
+        {can('subs') && <Menu.Item to="/payments" primaryText="المدفوعات" leftIcon={<PaymentsIcon />} />}
+        {can('subs') && <Menu.Item to="/coupons" primaryText="الكوبونات" leftIcon={<LocalOfferIcon />} />}
+        <Divider sx={{ my: 0.5 }} />
+        <Menu.Item to="/my-account" primaryText="حسابي" leftIcon={<AccountCircleIcon />} />
+      </Menu>
+    );
+  }
 
   return (
     <Menu>
@@ -76,7 +102,10 @@ const CustomMenu = () => {
       <Menu.Item to="/audit" primaryText="سجل المراجعة" leftIcon={<HistoryIcon />} />
 
       <Divider sx={{ my: 0.5 }} />
-      {permissions === 'superadmin' ? (
+      <SectionLabel label="الإدارة" />
+      <Menu.Item to="/staff" primaryText="فريق العمل والصلاحيات" leftIcon={<GroupsIcon />} />
+      <Menu.Item to="/my-account" primaryText="حسابي" leftIcon={<AccountCircleIcon />} />
+      {a?.role === 'superadmin' ? (
         <Menu.Item to="/settings" primaryText="الإعدادات" leftIcon={<SettingsIcon />} />
       ) : (
         <Menu.Item to="/settings" primaryText="الإعدادات" leftIcon={<SettingsIcon />} />
