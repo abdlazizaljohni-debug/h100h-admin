@@ -50,7 +50,7 @@ const CustomMenu = () => {
       <Menu>
         <Menu.DashboardItem primaryText="الرئيسية" leftIcon={<DashboardIcon />} />
         {canQ && <Menu.Item to="/question-bank" primaryText="بنك الأسئلة" leftIcon={<LibraryBooksIcon />} />}
-        {can('students_edit') && <Menu.Item to="/students" primaryText="الطلاب" leftIcon={<PeopleIcon />} />}
+        {(can('students_edit') || can('students_block')) && <Menu.Item to="/students" primaryText="الطلاب" leftIcon={<PeopleIcon />} />}
         {can('students_edit') && <Menu.Item to="/inbox" primaryText="صندوق الرسائل" leftIcon={<ForumIcon />} />}
         {can('students_edit') && <Menu.Item to="/examResults" primaryText="نتائج الاختبارات" leftIcon={<AssignmentIcon />} />}
         {can('subs') && <Menu.Item to="/pendingSubs" primaryText="الاشتراكات المعلقة" leftIcon={<PendingIcon />} />}
