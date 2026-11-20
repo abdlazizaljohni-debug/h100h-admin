@@ -1,79 +1,69 @@
 import { AuthProvider } from 'react-admin';
 import { supabase } from './supabaseClient';
+import { loadAccess, loginEmail, resetAccess } from './access';
 
 export const authProvider: AuthProvider = {
   login: async ({ username, password }) => {
     const { error } = await supabase.auth.signInWithPassword({
-      email: username,
+      email: loginEmail(String(username || '')),
       password,
     });
     if (error) throw new Error(error.message);
 
-    // Check admin role
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) throw new Error('لم يتم التعرف على المستخدم');
-
-    const { data: role, error: roleError } = await supabase
-      .from('admin_roles')
-      .select('role')
-      .eq('user_id', user.id)
-      .single();
-
-    if (roleError || !role) {
+    // 2026-11-20: مدير (admin_roles) أو موظف فعّال في فريق العمل (staff_members)
+    const a = await loadAccess(true);
+    if (!a.isAdmin && !a.staff) {
       await supabase.auth.signOut();
+      resetAccess();
       throw new Error('ليس لديك صلاحية الوصول للوحة التحكم');
     }
   },
 
   logout: async () => {
+    resetAccess();
     await supabase.auth.signOut();
   },
 
   checkAuth: async () => {
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) throw new Error('غير مصرح');
-    // 2026-11-19: من فعّل التحقق الثنائي لا يدخل بكلمة المرور وحدها
-    // (كان يكفي تحديث الصفحة بعد كلمة المرور لتجاوز خطوة الرمز)
+    // 2026-11-20: التحقق الثنائي إجباري للجميع (مدير وموظف)
+    // من لم يربط تطبيق المصادقة بعد → صفحة الدخول تعرض خطوة الربط
     const { data: aal } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
-    if (aal && aal.nextLevel === 'aal2' && aal.currentLevel !== 'aal2') {
+    if (!aal || aal.currentLevel !== 'aal2') {
       throw new Error('أدخل رمز التحقق الثنائي');
+    }
+    const a = await loadAccess();
+    if (!a.isAdmin && !a.staff) {
+      resetAccess();
+      await supabase.auth.signOut();
+      throw new Error('ليس لديك صلاحية الوصول للوحة التحكم');
     }
   },
 
   checkError: async (error) => {
-    if (error?.status === 401 || error?.status === 403) {
+    if (error?.status === 401) {
       throw new Error('غير مصرح');
     }
+    // 403 = لا صلاحية لهذا القسم (موظف) — لا نسجّل خروجه، تظهر رسالة الخطأ فقط
   },
 
   getIdentity: async () => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) throw new Error('غير مصرح');
-
-    const { data: role } = await supabase
-      .from('admin_roles')
-      .select('role, full_name')
-      .eq('user_id', user.id)
-      .single();
-
+    const a = await loadAccess();
     return {
       id: user.id,
-      fullName: role?.full_name || user.email || 'مشرف',
+      fullName: a.name || user.email || 'مشرف',
       avatar: undefined,
-      role: role?.role || 'admin',
+      role: a.isAdmin ? (a.role || 'admin') : 'staff',
     };
   },
 
+  // يرجع كائن الصلاحيات: { isAdmin, role, staff, perms, name }
   getPermissions: async () => {
     const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return 'guest';
-
-    const { data: role } = await supabase
-      .from('admin_roles')
-      .select('role')
-      .eq('user_id', user.id)
-      .single();
-
-    return role?.role || 'admin';
+    if (!user) return null;
+    return loadAccess();
   },
 };
