@@ -11,6 +11,7 @@ export const PERMS: { key: string; label: string; hint: string }[] = [
   { key: 'questions_view', label: 'مشاهدة الأسئلة', hint: 'بنك الأسئلة للقراءة فقط + البوابة بوضع المتابعة (كل الصفوف والاختبارات)' },
   { key: 'questions_edit', label: 'إضافة وتعديل الأسئلة', hint: 'إضافة وتعديل وحذف الأسئلة والصور والاستيراد الجماعي' },
   { key: 'students_edit', label: 'تعديل بيانات الطلاب', hint: 'تعديل الاسم والصف + صندوق الرسائل ونتائج الاختبارات' },
+  { key: 'students_block', label: 'حظر وإيقاف الطلاب', hint: 'حظر دائم أو إيقاف مؤقت + سجل الدخول وعناوين IP' },
   { key: 'subs', label: 'الاشتراكات والمدفوعات', hint: 'تفعيل الاشتراكات والطلبات المعلقة والمدفوعات والكوبونات' },
 ];
 export const STAFF_DOMAIN = 'staff.h100h.com';
