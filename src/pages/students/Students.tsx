@@ -36,6 +36,7 @@ type Stu = {
   id: number; mob: string; name?: string | null; grade?: number | null; city?: string | null; track?: string | null;
   plan?: string | null; active?: boolean | null; sub_end?: string | null; created_at?: string | null; last_login?: string | null;
   blocked?: boolean | null; blocked_reason?: string | null; suspended_until?: string | null; admin_note?: string | null;
+  parent_code?: string | null;
 };
 const GRADES: Record<number, string> = {
   1: 'الأول ابتدائي', 2: 'الثاني ابتدائي', 3: 'الثالث ابتدائي', 4: 'الرابع ابتدائي', 5: 'الخامس ابتدائي', 6: 'السادس ابتدائي',
@@ -48,6 +49,22 @@ const fmt = (d?: string | null, time = false) => {
 };
 const isSuspended = (r: Stu) => !!r.suspended_until && new Date(r.suspended_until) > new Date();
 const isPaid = (r: Stu) => !!r.active && (!r.sub_end || new Date(r.sub_end) >= new Date(new Date().toDateString()));
+
+/* ── كود الأهل: يُنسخ بضغطة ── */
+const ParentCode = ({ code }: { code?: string | null }) => {
+  const notify = useNotify();
+  if (!code) return <Typography variant="caption" color="text.disabled">—</Typography>;
+  return (
+    <Tooltip title="نسخ الكود">
+      <Box component="span" onClick={(e: React.MouseEvent) => {
+        e.stopPropagation();
+        navigator.clipboard?.writeText(String(code)).then(() => notify('تم نسخ كود الأهل', { type: 'info' }), () => {});
+      }} sx={{ fontFamily: 'monospace', fontWeight: 700, letterSpacing: '.08em', cursor: 'copy', direction: 'ltr', display: 'inline-block' }}>
+        {code}
+      </Box>
+    </Tooltip>
+  );
+};
 
 /* ── الحالة ── */
 const StatusChip = ({ r }: { r: Stu }) => {
@@ -372,6 +389,7 @@ export const StudentList = () => (
         <TextField source="id" label="#" />
         <TextField source="mob" label="رقم الجوال" />
         <TextField source="name" label="الاسم" />
+        <FunctionField label="كود الأهل" render={(r: Stu) => <ParentCode code={r.parent_code} />} />
         <TextField source="grade" label="الصف" />
         <FunctionField label="الحالة" render={(r: Stu) => <StatusChip r={r} />} />
         <FunctionField label="آخر دخول / IP" render={() => <LastIpCell />} />
@@ -407,6 +425,7 @@ const ShowBody = () => {
       <Grid container spacing={2}>
         <Grid item xs={12} md={6}><Card><CardContent>
           <Row k="#" v={r.id} />
+          <Row k="كود الأهل" v={<ParentCode code={r.parent_code} />} />
           <Row k="الصف" v={r.grade ? `${r.grade} — ${GRADES[r.grade] || ''}` : '—'} />
           <Row k="المسار" v={r.track || '—'} />
           <Row k="المدينة" v={r.city || '—'} />
