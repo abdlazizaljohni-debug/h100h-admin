@@ -16,6 +16,7 @@ import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import CasinoIcon from '@mui/icons-material/Casino';
 import { supabase } from '../supabaseClient';
+import { statsRpc, MissingRpc } from '../adminStats';
 
 const PLAN_AR: Record<string, string> = { monthly: 'شهري', quarter: 'ربع سنوي', semi: 'نصف سنوي', annual: 'سنوي', quarterly: 'ربع سنوي', yearly: 'سنوي' };
 const fmt = (n: number) => Number(n || 0).toLocaleString('ar-SA');
@@ -39,7 +40,7 @@ async function fetchAll<T>(table: string, cols: string, apply?: (q: any) => any)
 }
 
 type Person = { mob: string; name: string; detail: string };
-type Segment = { id: string; title: string; desc: string; color: string; people: Person[]; template: string };
+type Segment = { id: string; title: string; desc: string; color: string; people: Person[]; template: string; count?: number };
 
 const TPL_KEY = 'h100h-mkt-templates';
 const DEFAULT_TPL: Record<string, string> = {
@@ -81,12 +82,24 @@ const Segments = () => {
   const [busy, setBusy] = useState(false);
   const [sent, setSent] = useState<Record<string, boolean>>({});
   const [tick, setTick] = useState(0);
+  // 2026-11-21: الحساب على الخادم (admin_marketing_segments) — الأعداد + قائمة الشريحة المختارة فقط
+  const [srv, setSrv] = useState<{ counts: Record<string, number>; people: Record<string, any[]>; limit: number } | null>(null);
+  const [segLoading, setSegLoading] = useState(false);
 
   useEffect(() => {
     let alive = true;
     (async () => {
       setLoading(true); setErr(null);
       try {
+        try {
+          const r = await statsRpc<any>('admin_marketing_segments', { p_seg: sel, p_limit: 5000 });
+          if (!alive) return;
+          setSrv({ counts: r.counts || {}, people: { [sel]: r.people || [] }, limit: Number(r.limit || 5000) });
+          return;
+        } catch (e) {
+          if (!(e instanceof MissingRpc)) throw e;
+          if (alive) setSrv(null);
+        }
         const since = new Date(Date.now() - 30 * 864e5).toISOString();
         const [st, pe, ex] = await Promise.all([
           fetchAll<any>('students', 'mob,name,grade,plan,active,sub_end,joined,created_at,last_login,role'),
@@ -98,10 +111,39 @@ const Segments = () => {
       finally { if (alive) setLoading(false); }
     })();
     return () => { alive = false; };
-  }, [tick]);
+  }, [tick]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // تغيير الشريحة في وضع الخادم: نجيب قائمتها فقط
+  useEffect(() => {
+    if (!srv || srv.people[sel]) return;
+    let alive = true;
+    setSegLoading(true);
+    statsRpc<any>('admin_marketing_segments', { p_seg: sel, p_limit: 5000 })
+      .then((r) => { if (alive) setSrv((o) => (o ? { ...o, counts: r.counts || o.counts, people: { ...o.people, [sel]: r.people || [] } } : o)); })
+      .catch((e) => { if (alive) setErr(e.message); })
+      .finally(() => { if (alive) setSegLoading(false); });
+    return () => { alive = false; };
+  }, [sel, srv]);
 
   const segments: Segment[] = useMemo(() => {
-    const t = today(); const in7 = addDays(7); const ago30 = addDays(-30);
+    const t = today();
+    if (srv) {
+      const d = (s?: string) => (s ? new Date(s).toLocaleDateString('ar-SA') : '—');
+      const P = (id: string, f: (x: any) => string): Person[] => (srv.people[id] || []).map((x) => ({ mob: x.mob, name: x.name, detail: f(x) }));
+      const c = (id: string) => Number(srv.counts[id] || 0);
+      return [
+        { id: 'pending', title: 'اشتراك لم يكتمل', desc: 'طلبوا الاشتراك ولم يُفعَّل', color: '#d97706', count: c('pending'),
+          people: P('pending', (x) => `${PLAN_AR[x.plan] || x.plan || ''} · ${d(x.date)}`), template: tpl.pending },
+        { id: 'expiring', title: 'ينتهي خلال 7 أيام', desc: 'فرصة التجديد', color: '#dc2626', count: c('expiring'),
+          people: P('expiring', (x) => `ينتهي ${d(x.date)}`), template: tpl.expiring },
+        { id: 'expired', title: 'انتهى اشتراكه (30 يوماً)', desc: 'استرجاع المشتركين', color: '#7c3aed', count: c('expired'),
+          people: P('expired', (x) => `انتهى ${d(x.date)}`), template: tpl.expired },
+        { id: 'hot', title: 'مجانيون متفاعلون', desc: '3 اختبارات فأكثر خلال 30 يوماً وبدون اشتراك', color: '#059669', count: c('hot'),
+          people: P('hot', (x) => `${fmt(x.n)} اختبار${x.avg != null ? ` · متوسط ${fmt(Math.round(Number(x.avg)))}٪` : ''}`), template: tpl.hot },
+        { id: 'inactive', title: 'غير نشطين 14 يوماً', desc: 'سجّلوا ولم يدخلوا مؤخراً', color: '#64748b', count: c('inactive'),
+          people: P('inactive', (x) => `آخر دخول ${d(x.date)}`), template: tpl.inactive },
+      ];
+    } const in7 = addDays(7); const ago30 = addDays(-30);
     const paid = (s: any) => s.plan && !['free', 'visitor'].includes(s.plan);
     const active = (s: any) => s.active && paid(s) && (!s.sub_end || s.sub_end >= t);
     const examsBy = new Map<string, { n: number; sum: number; c: number }>();
@@ -127,7 +169,7 @@ const Segments = () => {
         people: data.st.filter((s) => { const l = s.last_login || s.joined || s.created_at; return l && l < addDays(-14) && l >= addDays(-90); })
           .map((s) => ({ mob: s.mob, name: s.name, detail: `آخر دخول ${d(s.last_login || s.joined)}` })), template: tpl.inactive },
     ];
-  }, [data, tpl]);
+  }, [data, tpl, srv]);
 
   const seg = segments.find((s) => s.id === sel)!;
   const render = (p: Person) => seg.template
@@ -163,7 +205,7 @@ const Segments = () => {
             <Card onClick={() => setSel(s.id)} sx={{ cursor: 'pointer', height: '100%', borderTop: `3px solid ${s.color}`, outline: sel === s.id ? `2px solid ${s.color}` : 'none' }}>
               <CardContent sx={{ pb: '12px !important' }}>
                 <Typography variant="body2" fontWeight={700}>{s.title}</Typography>
-                {loading ? <Skeleton width={50} height={36} /> : <Typography variant="h5" fontWeight={800}>{fmt(s.people.length)}</Typography>}
+                {loading ? <Skeleton width={50} height={36} /> : <Typography variant="h5" fontWeight={800}>{fmt(s.count ?? s.people.length)}</Typography>}
                 <Typography variant="caption" color="text.secondary">{s.desc}</Typography>
               </CardContent>
             </Card>
@@ -202,11 +244,14 @@ const Segments = () => {
               <Typography variant="caption" color="text.secondary">تم فتح {fmt(seg.people.filter((p) => sent[`${sel}:${p.mob}`]).length)}</Typography>
               <IconButton size="small" onClick={() => setTick((t) => t + 1)}><RefreshIcon fontSize="small" /></IconButton>
             </Box>
+            {seg.count != null && seg.count > seg.people.length && !segLoading && (
+              <Alert severity="info" sx={{ mx: 1.5, mb: 1 }}>تظهر أول {fmt(seg.people.length)} من {fmt(seg.count)} — الإرسال الجماعي يشمل الظاهرين فقط.</Alert>
+            )}
             <Box sx={{ maxHeight: 560, overflow: 'auto' }}>
               <Table size="small" stickyHeader>
                 <TableHead><TableRow><TableCell>الاسم</TableCell><TableCell>الجوال</TableCell><TableCell>التفاصيل</TableCell><TableCell /></TableRow></TableHead>
                 <TableBody>
-                  {loading ? <TableRow><TableCell colSpan={4}><LinearProgress /></TableCell></TableRow> :
+                  {(loading || segLoading) ? <TableRow><TableCell colSpan={4}><LinearProgress /></TableCell></TableRow> :
                     seg.people.length === 0 ? <TableRow><TableCell colSpan={4} align="center" sx={{ py: 4, color: 'text.secondary' }}>لا أحد في هذه الشريحة الآن ✓</TableCell></TableRow> :
                     seg.people.map((p) => {
                       const k = `${sel}:${p.mob}`;
@@ -250,6 +295,7 @@ const Coupons = () => {
   const notify = useNotify();
   const [rows, setRows] = useState<any[]>([]);
   const [pays, setPays] = useState<any[]>([]);
+  const [srvRev, setSrvRev] = useState<Record<string, { n: number; sum: number }> | null>(null);
   const [loading, setLoading] = useState(true);
   const [form, setForm] = useState({ code: '', type: 'percent', value: 20, days: 7 });
   const [busy, setBusy] = useState(false);
@@ -257,20 +303,28 @@ const Coupons = () => {
   useEffect(() => {
     (async () => {
       setLoading(true);
-      const [{ data: c }, p] = await Promise.all([
+      // 2026-11-21: إيراد الكوبونات من الخادم (admin_coupon_revenue)، والطريقة القديمة احتياط
+      const revP = statsRpc<any[]>('admin_coupon_revenue').then((r) => {
+        const m: Record<string, { n: number; sum: number }> = {};
+        (r || []).forEach((x) => { m[String(x.code).toUpperCase()] = { n: Number(x.n || 0), sum: Number(x.sum || 0) }; });
+        return m;
+      }).catch(() => null);
+      const [{ data: c }, sr] = await Promise.all([
         supabase.from('coupons').select('*').order('created_at', { ascending: false }),
-        fetchAll<any>('payments', 'coupon,amount,status').catch(() => []),
+        revP,
       ]);
-      setRows(c || []); setPays(p); setLoading(false);
+      const p = sr ? [] : await fetchAll<any>('payments', 'coupon,amount,status').catch(() => []);
+      setRows(c || []); setSrvRev(sr); setPays(p); setLoading(false);
     })();
   }, [tick]);
   const rev = useMemo(() => {
+    if (srvRev) return srvRev;
     const m: Record<string, { n: number; sum: number }> = {};
     pays.filter((p) => p.status === 'activated' && p.coupon).forEach((p) => {
       const k = String(p.coupon).toUpperCase(); m[k] = m[k] || { n: 0, sum: 0 }; m[k].n++; m[k].sum += Number(p.amount || 0);
     });
     return m;
-  }, [pays]);
+  }, [pays, srvRev]);
   const gen = () => {
     const words = ['RKZ', 'HALL', 'NAJAH', 'TOP', 'BACK', 'STAR'];
     setForm({ ...form, code: `${words[Math.floor(Math.random() * words.length)]}${form.value}${Math.random().toString(36).slice(2, 5).toUpperCase()}` });
@@ -351,10 +405,18 @@ const Traffic = () => {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [days, setDays] = useState(30);
+  // 2026-11-21: التجميع على الخادم (admin_traffic_stats)، والطريقة القديمة احتياط
+  const [srv, setSrv] = useState<any | null>(null);
   useEffect(() => {
     setLoading(true); setErr(null);
+    statsRpc<any>('admin_traffic_stats', { p_days: days })
+      .then((r) => { setSrv(r); setRows([]); setLoading(false); })
+      .catch((e) => {
+        if (!(e instanceof MissingRpc)) { setErr(e.message); setLoading(false); return; }
+        setSrv(null);
     fetchAll<any>('site_visits', 'referrer,page,device_type,session_id,created_at', (q) => q.gte('created_at', new Date(Date.now() - days * 864e5).toISOString()))
-      .then(setRows).catch((e) => setErr(e.message)).finally(() => setLoading(false));
+      .then(setRows).catch((e2) => setErr(e2.message)).finally(() => setLoading(false));
+      });
   }, [days]);
   const m = useMemo(() => {
     const src = (r: string) => {
@@ -378,8 +440,17 @@ const Traffic = () => {
       const c: Record<string, number> = {}; rows.forEach((r) => { const k = f(r); c[k] = (c[k] || 0) + 1; });
       return Object.entries(c).map(([k, n]) => ({ k, n })).sort((a, b) => b.n - a.n);
     };
-    return { sources: count((r) => src(r.referrer)).filter((x) => x.k !== 'داخلي'), pages: count((r) => r.page || '/').slice(0, 10), sessions: new Set(rows.map((r) => r.session_id)).size };
-  }, [rows]);
+    if (srv) {
+      const c: Record<string, number> = {};
+      (srv.referrers || []).forEach((x: any) => { const k = src(x.k); c[k] = (c[k] || 0) + Number(x.n || 0); });
+      return {
+        sources: Object.entries(c).map(([k, n]) => ({ k, n })).sort((a, b) => b.n - a.n).filter((x) => x.k !== 'داخلي'),
+        pages: ((srv.pages || []) as any[]).map((x) => ({ k: String(x.k), n: Number(x.n || 0) })),
+        sessions: Number(srv.sessions || 0), visits: Number(srv.visits || 0),
+      };
+    }
+    return { sources: count((r) => src(r.referrer)).filter((x) => x.k !== 'داخلي'), pages: count((r) => r.page || '/').slice(0, 10), sessions: new Set(rows.map((r) => r.session_id)).size, visits: rows.length };
+  }, [rows, srv]);
   const Bars = ({ items, color }: { items: { k: string; n: number }[]; color: string }) => {
     const max = Math.max(1, ...items.map((i) => i.n));
     return (
@@ -398,7 +469,7 @@ const Traffic = () => {
     <Box>
       {err && <Alert severity="error" sx={{ mb: 2 }}>{err}</Alert>}
       <Box display="flex" gap={1} alignItems="center" mb={2}>
-        <Chip label={`${fmt(rows.length)} زيارة · ${fmt(m.sessions)} جلسة`} />
+        <Chip label={`${fmt(m.visits)} زيارة · ${fmt(m.sessions)} جلسة`} />
         <Box flex={1} />
         <TextField select size="small" value={days} onChange={(e) => setDays(Number(e.target.value))}>
           <MenuItem value={7}>آخر 7 أيام</MenuItem><MenuItem value={30}>آخر 30 يوماً</MenuItem><MenuItem value={90}>آخر 90 يوماً</MenuItem>
