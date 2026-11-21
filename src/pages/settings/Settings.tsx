@@ -12,6 +12,7 @@ import BackupIcon from '@mui/icons-material/Backup';
 import InfoIcon from '@mui/icons-material/Info';
 import SecurityIcon from '@mui/icons-material/Security';
 import { supabase } from '../../supabaseClient';
+import { CategoryPrices, PLANS } from './CategoryPrices';
 
 interface AdminRole {
   id: string;
@@ -332,7 +333,7 @@ export const SettingsPage = () => {
         <Card>
           <CardContent>
             <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
-              <Typography variant="h6" fontWeight={600}>أسعار الخطط</Typography>
+              <Typography variant="h6" fontWeight={600}>أسعار الطلاب (الصفوف 1–12)</Typography>
               <Button size="small" variant="outlined" onClick={loadPlanPrices}>تحديث</Button>
             </Box>
             {planLoading ? (
@@ -350,7 +351,7 @@ export const SettingsPage = () => {
                 <TableBody>
                   {planPrices.map(p => (
                     <TableRow key={p.plan} sx={{ '&:hover': { bgcolor: 'action.hover' } }}>
-                      <TableCell sx={{ fontWeight: 'bold' }}>{p.plan}</TableCell>
+                      <TableCell sx={{ fontWeight: 'bold' }}>{PLANS.find((x) => x.key === p.plan)?.label || p.plan} <Typography component="span" variant="caption" color="text.secondary">({p.plan})</Typography></TableCell>
                       <TableCell>
                         <TextField
                           size="small"
@@ -376,6 +377,7 @@ export const SettingsPage = () => {
             )}
           </CardContent>
         </Card>
+        <CategoryPrices />
       </TabPanel>
 
       {/* App Settings */}
