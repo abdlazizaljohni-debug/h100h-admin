@@ -19,6 +19,7 @@ import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid,
 } from 'recharts';
 import { supabase } from '../supabaseClient';
+import { statsRpc, MissingRpc, shortDay } from '../adminStats';
 
 /* ── إعدادات عامة ── */
 const ENV = ((import.meta as any).env || {}) as Record<string, string>;
@@ -557,6 +558,8 @@ export const DevTab = () => {
   const [payments, setPayments] = useState<any[]>([]);
   const [ins, setIns] = useState<Insights | null>(null);
   const [anon, setAnon] = useState<AnonResult[]>([]);
+  // 2026-11-21: الأرقام من الخادم (admin_dev_stats). null = الطريقة القديمة
+  const [srv, setSrv] = useState<any | null>(null);
   const [done, setDone] = useState<Record<string, boolean>>(() => {
     try { return JSON.parse(localStorage.getItem(ROADMAP_KEY) || '{}'); } catch { return {}; }
   });
@@ -568,13 +571,24 @@ export const DevTab = () => {
       setLoading(true); setErr(null);
       const since = daysAgo(29).toISOString();
       try {
+        const [r, insR0, an0] = await Promise.all([
+          statsRpc<any>('admin_dev_stats').catch((e) => { if (e instanceof MissingRpc) return null; throw e; }),
+          loadInsights(),
+          probeAnon(['students', 'app_settings', 'coupons', 'pending_subs']),
+        ]);
+        if (r) {
+          if (!alive) return;
+          setSrv(r); setIns(insR0.data); setAnon(an0);
+          return;
+        }
+        if (alive) setSrv(null);
         const [st, vi, ex, pa, insR, an] = await Promise.all([
           fetchAll<any>('students', 'mob,grade,plan,active,sub_end,joined,created_at,last_login,role'),
           fetchAll<any>('site_visits', 'session_id,device_type,created_at,mob', (q) => q.gte('created_at', since)).catch(() => []),
           fetchAll<any>('exam_results', '*', (q) => q.gte('created_at', since)).catch(() => []),
           fetchAll<any>('payments', 'mob,status,amount,created_at').catch(() => []),
-          loadInsights(),
-          probeAnon(['students', 'app_settings', 'coupons', 'pending_subs']),
+          Promise.resolve(insR0),
+          Promise.resolve(an0),
         ]);
         if (!alive) return;
         setStudents(st.filter((s) => (s.role || 'student') === 'student'));
@@ -586,6 +600,33 @@ export const DevTab = () => {
   }, [tick]);
 
   const m = useMemo(() => {
+    if (srv) {
+      const n = (k: string) => Number(srv[k] || 0);
+      const g: Record<string, number> = {};
+      (srv.grades || []).forEach((x: any) => { const k = GRADE_AR[Number(x.grade)] || 'غير محدد'; g[k] = (g[k] || 0) + Number(x.n || 0); });
+      const grades = Object.entries(GRADE_AR).map(([k, name]) => ({ name, value: g[name] || 0, n: Number(k) }))
+        .concat(g['غير محدد'] ? [{ name: 'غير محدد', value: g['غير محدد'], n: 99 }] : []);
+      const DEV_AR: Record<string, string> = { mobile: 'جوال', desktop: 'كمبيوتر', tablet: 'تابلت' };
+      const dev: Record<string, number> = {};
+      (srv.devices || []).forEach((x: any) => { const k = DEV_AR[x.k] || x.k; dev[k] = (dev[k] || 0) + Number(x.n || 0); });
+      const cohort = n('cohort');
+      return {
+        total: n('total'),
+        dau: Math.max(n('login1'), n('exam1')), wau: Math.max(n('login7'), n('exam7')), mau: Math.max(n('login30'), n('exam30')),
+        funnel: [
+          { name: 'زيارات (جلسات)', value: n('sessions') },
+          { name: 'تسجيل جديد', value: n('new30') },
+          { name: 'اشتراك مدفوع', value: n('paid30') },
+        ],
+        grades,
+        subjects: ((srv.subjects || []) as any[]).map((x) => ({ name: String(x.name), value: Number(x.value || 0), avg: x.avg == null ? null : Math.round(Number(x.avg)) })),
+        devices: Object.entries(dev).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value),
+        retention: cohort ? Math.round((n('returned') / cohort) * 100) : null,
+        cohort,
+        activeDaily: ((srv.active_daily || []) as any[]).map((x) => ({ day: shortDay(String(x.d)), value: Number(x.n || 0) })),
+        sessions: n('sessions'),
+      };
+    }
     const now = Date.now();
     const within = (s: string | null | undefined, days: number) => !!s && now - new Date(s).getTime() <= days * 864e5;
     const examMobs = (days: number) => new Set(exams.filter((e) => within(e.created_at, days)).map((e) => e.mob)).size;
@@ -634,8 +675,8 @@ export const DevTab = () => {
     exams.forEach((e) => { const k = String(e.created_at).slice(0, 10); (act[k] = act[k] || new Set()).add(e.mob); });
     const activeDaily = days.map((k) => ({ day: `${Number(k.slice(8))}/${Number(k.slice(5, 7))}`, value: act[k]?.size || 0 }));
 
-    return { dau, wau, mau, funnel, grades, subjects, devices, retention, cohort: cohort.length, activeDaily, sessions };
-  }, [students, visits, exams, payments]);
+    return { total: students.length, dau, wau, mau, funnel, grades, subjects, devices, retention, cohort: cohort.length, activeDaily, sessions };
+  }, [srv, students, visits, exams, payments]);
 
   const roadmap: RoadItem[] = useMemo(() => {
     const isOpen = (t: string) => anon.find((a) => a.table === t)?.open;
@@ -672,7 +713,7 @@ export const DevTab = () => {
       <Grid container spacing={2} mb={2}>
         <Grid item xs={6} md={3}><Stat loading={loading} title="نشطون اليوم" value={fmt(m.dau)} color="#1a56db" /></Grid>
         <Grid item xs={6} md={3}><Stat loading={loading} title="نشطون هذا الأسبوع" value={fmt(m.wau)} color="#0891b2" /></Grid>
-        <Grid item xs={6} md={3}><Stat loading={loading} title="نشطون هذا الشهر" value={fmt(m.mau)} sub={students.length ? `${fmt(Math.round((m.mau / students.length) * 100))}٪ من كل الطلاب` : undefined} color="#7c3aed" /></Grid>
+        <Grid item xs={6} md={3}><Stat loading={loading} title="نشطون هذا الشهر" value={fmt(m.mau)} sub={m.total ? `${fmt(Math.round((m.mau / m.total) * 100))}٪ من كل الطلاب` : undefined} color="#7c3aed" /></Grid>
         <Grid item xs={6} md={3}><Stat loading={loading} title="نسبة العودة" value={m.retention == null ? '—' : `${fmt(m.retention)}٪`} sub={`من ${fmt(m.cohort)} سجّلوا قبل 8–60 يوماً`} color="#059669" /></Grid>
       </Grid>
 
