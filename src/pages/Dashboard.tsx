@@ -93,10 +93,27 @@ export const ActivateDialog = ({ row, onClose, onDone }: {
   const notify = useNotify();
   const [plan, setPlan] = useState('annual');
   const [busy, setBusy] = useState(false);
+  // 2026-11-21: إظهار فئة الطالب وسعر الباقة (طالب / جامعي / موظف) — عرض فقط
+  const [prices, setPrices] = useState<Record<string, Record<string, number>> | null>(null);
   useEffect(() => {
     const p = normPlan(row?.plan);
     setPlan(['monthly', 'quarter', 'semi', 'annual'].includes(p) ? p : 'annual');
   }, [row]);
+  useEffect(() => {
+    if (!row || prices) return;
+    (async () => {
+      const [{ data: pp }, { data: as }] = await Promise.all([
+        supabase.from('plan_prices').select('plan,price'),
+        supabase.from('app_settings').select('key,value').in('key', ['prices_university', 'prices_employee']),
+      ]);
+      const out: Record<string, Record<string, number>> = { student: {}, university: {}, employee: {} };
+      (pp || []).forEach((r: any) => { out.student[r.plan] = Number(r.price); });
+      (as || []).forEach((r: any) => {
+        try { const o = typeof r.value === 'string' ? JSON.parse(r.value) : r.value; out[r.key.replace('prices_', '')] = o || {}; } catch { /* */ }
+      });
+      setPrices(out);
+    })().catch(() => setPrices({ student: {}, university: {}, employee: {} }));
+  }, [row, prices]);
   if (!row) return null;
   const go = async () => {
     setBusy(true);
@@ -124,6 +141,18 @@ export const ActivateDialog = ({ row, onClose, onDone }: {
             <MenuItem value="annual">سنوي (12 شهراً)</MenuItem>
           </Select>
         </FormControl>
+        {(() => {
+          const g = Number(row.grade || 0);
+          const cat = g === 13 ? 'university' : g === 14 ? 'employee' : 'student';
+          const catAr = g === 13 ? 'جامعي' : g === 14 ? 'موظف' : g ? 'طالب' : 'طالب (الصف غير محدد)';
+          const price = prices?.[cat]?.[plan];
+          return (
+            <Box display="flex" gap={1} mt={1.5} flexWrap="wrap">
+              <Chip size="small" label={`الفئة: ${catAr}`} color={cat === 'student' ? 'primary' : cat === 'university' ? 'secondary' : 'success'} variant="outlined" />
+              <Chip size="small" label={prices ? (price != null ? `السعر: ${sar(Number(price))}` : 'السعر غير محدد') : 'جارٍ تحميل السعر…'} />
+            </Box>
+          );
+        })()}
         <Typography variant="caption" color="text.secondary" display="block" mt={1.5}>
           إن كان للطالب اشتراك ساري تُضاف المدة إلى نهايته. تُنقل كلمة المرور التي اختارها وقت الاشتراك.
         </Typography>
