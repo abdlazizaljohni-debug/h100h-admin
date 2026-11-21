@@ -19,6 +19,7 @@ import {
 import { useNotify } from 'react-admin';
 import { supabase } from '../supabaseClient';
 import { TechTab, SecurityTab, DevTab } from './DashboardInsights';
+import { statsRpc, MissingRpc } from '../adminStats';
 
 /* ── أدوات ── */
 const FREE = new Set(['free', 'visitor', 'زائر', '', null as unknown as string]);
@@ -145,12 +146,23 @@ const Overview = () => {
   const [exams, setExams] = useState<Exam[]>([]);
   const [activate, setActivate] = useState<Pending | null>(null);
   const [tick, setTick] = useState(0);
+  // 2026-11-21: الأرقام من الخادم (admin_overview_stats). null = الطريقة القديمة
+  const [srv, setSrv] = useState<any | null>(null);
 
   useEffect(() => {
     let alive = true;
     (async () => {
       setLoading(true); setErr(null);
       try {
+        try {
+          const r = await statsRpc<any>('admin_overview_stats');
+          if (!alive) return;
+          setSrv(r); setPending((r.pending || []) as Pending[]);
+          return;
+        } catch (e) {
+          if (!(e instanceof MissingRpc)) throw e;
+          if (alive) setSrv(null);
+        }
         const since30 = daysAgo(29).toISOString();
         const [st, pe, pa, ex] = await Promise.all([
           fetchAll<Student>('students', 'mob,name,plan,active,sub_end,joined,created_at,role,grade'),
@@ -171,6 +183,21 @@ const Overview = () => {
   }, [tick]);
 
   const m = useMemo(() => {
+    if (srv) {
+      const byPlan: Record<string, number> = {};
+      (srv.plans || []).forEach((p: any) => { const k = PLAN_AR[normPlan(p.plan)] || p.plan || '—'; byPlan[k] = (byPlan[k] || 0) + Number(p.n || 0); });
+      const total = Number(srv.total || 0); const subscribedCount = Number(srv.subscribed || 0);
+      return {
+        total, subscribedCount, expiringCount: Number(srv.expiring_count || 0), pendingCount: Number(srv.pending_count || 0),
+        expiringSoon: (srv.expiring || []) as Student[], newWeek: Number(srv.new_week || 0),
+        revMonth: Number(srv.rev_month || 0), revTotal: Number(srv.rev_total || 0), review: Number(srv.review || 0),
+        planData: Object.entries(byPlan).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value),
+        signups: (srv.signups || []).map((x: any) => ({ day: shortDay(String(x.d)), value: Number(x.n || 0) })),
+        examsDaily: (srv.exams_daily || []).map((x: any) => ({ day: shortDay(String(x.d)), value: Number(x.n || 0) })),
+        examsToday: Number(srv.exams_today || 0), avgPct: srv.avg_pct == null ? null : Math.round(Number(srv.avg_pct)),
+        conv: total ? Math.round((subscribedCount / total) * 1000) / 10 : 0,
+      };
+    }
     const today = todayStr();
     const in7 = dayKey(new Date(Date.now() + 7 * 864e5));
     const wk = dayKey(daysAgo(6));
@@ -208,8 +235,11 @@ const Overview = () => {
     const avgPct = pcts.length ? Math.round(pcts.reduce((a, b) => a + b, 0) / pcts.length) : null;
     const conv = students.length ? Math.round((subscribed.length / students.length) * 1000) / 10 : 0;
 
-    return { subscribed, expiringSoon, newWeek, revMonth, revTotal, review, planData, signups, examsDaily, examsToday, avgPct, conv };
-  }, [students, payments, exams]);
+    return {
+      total: students.length, subscribedCount: subscribed.length, expiringCount: expiringSoon.length, pendingCount: pending.length,
+      expiringSoon, newWeek, revMonth, revTotal, review, planData, signups, examsDaily, examsToday, avgPct, conv,
+    };
+  }, [srv, students, payments, exams, pending]);
 
   return (
     <Box>
@@ -222,16 +252,16 @@ const Overview = () => {
       {err && <Alert severity="error" sx={{ mb: 2 }}>{err}</Alert>}
 
       <Grid container spacing={2} mb={2}>
-        <Grid item xs={12} sm={6} lg={3}><Kpi loading={loading} title="إجمالي الطلاب" value={fmt(students.length)} sub={`+${fmt(m.newWeek)} هذا الأسبوع`} icon={<PeopleIcon />} color="#1a56db" /></Grid>
-        <Grid item xs={12} sm={6} lg={3}><Kpi loading={loading} title="مشتركون نشطون" value={fmt(m.subscribed.length)} sub={`نسبة التحويل ${m.conv.toLocaleString('ar-SA')}٪`} icon={<WorkspacePremiumIcon />} color="#7c3aed" /></Grid>
-        <Grid item xs={12} sm={6} lg={3}><Kpi loading={loading} title="طلبات بانتظار التفعيل" value={fmt(pending.length)} sub={m.review ? `${fmt(m.review)} دفعة تحتاج مراجعة` : undefined} icon={<PendingActionsIcon />} color="#d97706" /></Grid>
+        <Grid item xs={12} sm={6} lg={3}><Kpi loading={loading} title="إجمالي الطلاب" value={fmt(m.total)} sub={`+${fmt(m.newWeek)} هذا الأسبوع`} icon={<PeopleIcon />} color="#1a56db" /></Grid>
+        <Grid item xs={12} sm={6} lg={3}><Kpi loading={loading} title="مشتركون نشطون" value={fmt(m.subscribedCount)} sub={`نسبة التحويل ${m.conv.toLocaleString('ar-SA')}٪`} icon={<WorkspacePremiumIcon />} color="#7c3aed" /></Grid>
+        <Grid item xs={12} sm={6} lg={3}><Kpi loading={loading} title="طلبات بانتظار التفعيل" value={fmt(m.pendingCount)} sub={m.review ? `${fmt(m.review)} دفعة تحتاج مراجعة` : undefined} icon={<PendingActionsIcon />} color="#d97706" /></Grid>
         <Grid item xs={12} sm={6} lg={3}><Kpi loading={loading} title="إيراد هذا الشهر" value={sar(m.revMonth)} sub={`الإجمالي ${sar(m.revTotal)}`} icon={<PaymentsIcon />} color="#059669" /></Grid>
       </Grid>
 
       <Grid container spacing={2} mb={2}>
         <Grid item xs={12} sm={6} lg={3}><Kpi loading={loading} title="تسجيلات جديدة (7 أيام)" value={fmt(m.newWeek)} icon={<PersonAddIcon />} color="#0891b2" /></Grid>
         <Grid item xs={12} sm={6} lg={3}><Kpi loading={loading} title="اختبارات اليوم" value={fmt(m.examsToday)} icon={<AssignmentTurnedInIcon />} color="#2563eb" /></Grid>
-        <Grid item xs={12} sm={6} lg={3}><Kpi loading={loading} title="اشتراكات تنتهي خلال 7 أيام" value={fmt(m.expiringSoon.length)} icon={<EventBusyIcon />} color="#dc2626" /></Grid>
+        <Grid item xs={12} sm={6} lg={3}><Kpi loading={loading} title="اشتراكات تنتهي خلال 7 أيام" value={fmt(m.expiringCount)} icon={<EventBusyIcon />} color="#dc2626" /></Grid>
         <Grid item xs={12} sm={6} lg={3}><Kpi loading={loading} title="متوسط الدرجات (30 يوماً)" value={m.avgPct == null ? '—' : `${m.avgPct.toLocaleString('ar-SA')}٪`} icon={<InsightsIcon />} color="#9333ea" /></Grid>
       </Grid>
 
